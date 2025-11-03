@@ -1,0 +1,11 @@
+Drizzle : For ORM
+Event stream : server sent stream,
+
+
+Payload request: Where role is user
+1 requests
+2.1 kB transferred
+{"id":"WeWII4eGIUVvF1T3","messages":[{"parts":[{"type":"text","text":"Tashi delek"}],"
+id":"yfd6Z1nqtId3Do72","role":"user"}],"trigger":"submit-message"}
+
+
