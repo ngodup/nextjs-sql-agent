@@ -1,11 +1,159 @@
 Drizzle : For ORM
 Event stream : server sent stream,
 
-
+Technically terms:
+----------------
+Cut off date: last train to llm after it is called
+System prompt: We need explicit we need to instruction the llm, what to do based on tool and paramater we got from llm
+ 
 Payload request: Where role is user
 1 requests
 2.1 kB transferred
 {"id":"WeWII4eGIUVvF1T3","messages":[{"parts":[{"type":"text","text":"Tashi delek"}],"
 id":"yfd6Z1nqtId3Do72","role":"user"}],"trigger":"submit-message"}
+
+
+
+__________ 
+Tools calling in vercel sdk
+Application, LLM to request data slq to the sqlite Turso
+We need to tell llm for database schema, what kind of database we had
+
+
+turso db create sql-agent
+Created group default at aws-eu-west-1 in 944ms.
+Created database sql-agent at group default in 502ms.
+
+Start an interactive SQL shell with:
+
+   turso db shell sql-agent
+
+To see information about the database, including a connection URL, run:
+
+   turso db show sql-agent
+
+To get an authentication token for the database, run:
+
+   turso db tokens create sql-agent
+
+   turso db tokens create sql-agent
+
+Topic : 2
+node --env-file=.env.local src/db/db.seed.ts we had used this instead bun run src/db/db.seed.ts, as issues with node command
+We had dummy data in db.seed.ts file we want to upload these data inside the turso file for that we run above command.
+When you run db.seed.ts, you’re basically acting like a mini “database admin script.” It connects straight to your Turso instance online, not through your Next.js app.
+
+So:
+
+✅ You don’t need to start Next.js.
+✅ You just need your .env.local to contain the correct connection details.
+✅ The script can be run from anywhere (your Mac, CI/CD, or even a deployment pipeline).
+
+
+Here’s the flow:
+1️⃣ You manually run your seed script (db.seed.ts).
+→ That’s like running a one-time utility command — outside of Next.js.
+2️⃣ The script connects directly to your Turso database using:
+DATABASE_URL (from .env.local)
+TURSO_AUTH_TOKEN
+
+3️⃣ It inserts all your predefined “dummy data” (products, sales, etc.) into Turso.
+4️⃣ The Turso database lives online (in the cloud) — so even though your app isn’t running locally, the script is talking directly to that remote database via the internet.
+
+Topic 3
+IS IMPORTANT TO TELL LLM WHAT DB schema, we need to send db schema to llm so that it will know what kind of db we had.
+Option 1, for vercel sdk route.ts we can sent via SYSTEM_PROMPT for each request, but this not recommended solution as we dont need to query to llm all the time, only when we needed it.
+and it will consume more token also.
+
+Best solution is to create another tools like db which we had created before for db schema. If LLM need db query, it will first call the schema tools, to recieve or know about db scehema
+ and then execute the db tools, to generate query very well. For that we need two tools, one for db for generating query and second for schema to know about db for llm.
+ 
+
+
+
+
+Topic llm response for query order
+User: 
+How much sales we made today
+AI: 
+{
+  "type": "tool-schema",
+  "toolCallId": "call_6rMqMImRv6xZ7NRTX8yWtFzo",
+  "state": "output-available",
+  "input": {},
+  "output": "CREATE TABLE products (id integer PRIMARY KEY AUTOINCREMENT NOT NULL,name text NOT NULL, category text NOT NULL, price real NOT NULL, stock integer DEFAULT 0 NOT NULL, created_at text DEFAULT CURRENT_TIMESTAMP);\n          CREATE TABLE sales (id integer PRIMARY KEY AUTOINCREMENT NOT NULL,product_id: integer NOT NULL,quantity: integer NOT NULL,total_amount real NOT NULL,sale_date text DEFAULT CURRENT_TIMESTAMP,customer_name text NOT NULL,region text NOT NULL,FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE no action ON DELETE no action);\n        ",
+  "callProviderMetadata": {
+    "openai": {
+      "itemId": "fc_0bd5383da8e5e191006909e1d0b81c8192bb032fa74d6dd3b1"
+    }
+  }
+}
+{
+  "type": "tool-db",
+  "toolCallId": "call_6w8Gd8kxUHRB8MVnCGlj8JZs",
+  "state": "output-available",
+  "input": {
+    "query": "SELECT SUM(total_amount) AS total_sales_today FROM sales WHERE date(sale_date) = date('now');"
+  },
+  "output": {
+    "columns": [
+      "total_sales_today"
+    ],
+    "columnTypes": [
+      ""
+    ],
+    "rows": [
+      [
+        9775.43
+      ]
+    ],
+    "rowsAffected": 0,
+    "lastInsertRowid": null
+  },
+  "callProviderMetadata": {
+    "openai": {
+      "itemId": "fc_0bd5383da8e5e191006909e1d2af008192be89fee951b1fdda"
+    }
+  }
+}
+We made a total of $9,775.43 in sales today.
+____________________________________________
+
+LLM doest not the date time of today or any, eg what is today sales. To make it better to understand it we can used pattern inside the SYSTEM_PROMPT like 
+java script 
+   ${ new Date().toLocaleString('sv-SE') } we are telling llm today is this date and based on it llm make query
+
+
+LLM response messages had different object is array of object.
+
+types: text, step-start,  tool-tools-name, 
+
+Each object is a message
+1. object had one parts, type : "text" our message send it and it has role: "user" indicating that it message sent by user.
+2. Object role: "assistant" this is from llm. it had multiple parts , the first part had type: "step-start", next part : type:"tool-schema", is the name of tools calling which 
+we had used, with prefix of tool where schema is tool name. and its state is output-available. had output of sql query return from llm in output field.
+ parts had next type: "step-start" , after recieving the output query from llm, it indicate llm will start new generation, this is intermediate state after the calling schema tool,
+ ,
+ We can uses type: "step-start" at UI for LLM processing kind of loading, to improve user experience.,
+
+ next part type: "tool-db", state: "output-available", indicating db executed and input : "select * from products", output we had list of all the products,
+
+ next:
+ type: "step-start" indicate new generation
+ "text": text: here list of all product from db with table attribute plus data with newline  from ai
+
+
+ next
+ sate: done
+
+
+   
+We can used in route page of llm
+              case "step-start":
+                return <div key={`${message.id}-${i}`}>Processing ...</div>;
+But chatgpt 5 i guess we dont need send schema for db query llm 5 will decide what to call ?
+
+
+
 
 
